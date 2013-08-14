@@ -1,0 +1,4 @@
+#include "resource.h"
+
+LANGUAGE 0, 0
+IDI_ICON      ICON     ".\\launcher.ico"

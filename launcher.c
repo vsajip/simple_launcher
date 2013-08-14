@@ -25,7 +25,11 @@
 
 #include "stdafx.h"
 
+#define APPENDED_ARCHIVE
+
 #define MSGSIZE 1024
+
+#if !defined(APPENDED_ARCHIVE)
 
 static char suffix[] = {
 #if defined(_CONSOLE)
@@ -34,6 +38,8 @@ static char suffix[] = {
     "-script.pyw"
 #endif
 };
+
+#endif
 
 static int pid = 0;
 
@@ -56,8 +62,10 @@ int MessageBoxTimeoutA(HWND hWnd, LPCSTR lpText,
             MsgBoxTOA = (MSGBOXWAPI)GetProcAddress(hUser, 
                                       "MessageBoxTimeoutA");
         else {
-            //stuff happened, add code to handle it here 
-            //(possibly just call MessageBox())
+            /*
+             * stuff happened, add code to handle it here 
+             * (possibly just call MessageBox())
+             */
         }
     }
 
@@ -80,17 +88,128 @@ assert(BOOL condition, char * format, ... )
         int len;
 
         va_start(va, format);
-        len = vsnprintf(message, MSGSIZE - 1, format, va);
+        len = vsnprintf_s(message, MSGSIZE, MSGSIZE - 1, format, va);
 #if defined(_CONSOLE)
         fprintf(stderr, "Fatal error in launcher: %s\n", message);
 #else
         MessageBoxTimeoutA(NULL, message, "Fatal Error in Launcher",
                            MB_OK | MB_SETFOREGROUND | MB_ICONERROR,
-                           0, 2000);
+                           0, 3000);
 #endif
         ExitProcess(1);
     }
 }
+
+static char script_path[MAX_PATH];
+
+#if defined(APPENDED_ARCHIVE)
+
+#define LARGE_BUFSIZE (65 * 1024 * 1024)
+
+typedef struct {
+    DWORD sig;
+    DWORD unused_disk_nos;
+    DWORD unused_numrecs;
+    DWORD cdsize;
+    DWORD cdoffset;
+} ENDCDR;
+
+static char
+end_cdr_sig [] = { 0x50, 0x4B, 0x05, 0x06 };
+
+static char *
+find_pattern(char *buffer, size_t bufsize, char * pattern, size_t patsize)
+{
+    char * result = NULL;
+    char * p;
+    char * bp = buffer;
+    long n;
+
+    while ((n = bufsize - (bp - buffer) - patsize) >= 0) {
+        p = (char *) memchr(bp, pattern[0], n);
+        if (p == NULL)
+            break;
+        if (memcmp(pattern, p, patsize) == 0) {
+            result = p; /* keep trying - we want the last one */
+        }
+        bp = p + 1;
+    }
+    return result;
+}
+
+static char *
+find_shebang(char * buffer, size_t bufsize)
+{
+    FILE * fp = NULL;
+    errno_t rc;
+    char * result = NULL;
+    char * p;
+    size_t read;
+    long pos;
+    long file_size;
+    long end_cdr_offset = -1;
+    ENDCDR end_cdr;
+
+    rc = fopen_s(&fp, script_path, "rb");
+    assert(rc == 0, "Failed to open executable");
+    fseek(fp, 0, SEEK_END);
+    file_size = ftell(fp);
+    pos = file_size - bufsize;
+    if (pos < 0)
+        pos = 0;
+    fseek(fp, pos, SEEK_SET);
+    read = fread(buffer, sizeof(char), bufsize, fp);
+    p = find_pattern(buffer, read, end_cdr_sig, sizeof(end_cdr_sig));
+    if (p != NULL) {
+        end_cdr = *((ENDCDR *) p);
+        end_cdr_offset = pos + (p - buffer);
+    }
+    else {
+        /*
+         * Try a larger buffer. A comment can only be 64K long, so
+         * go for the largest size.
+         */
+        char * big_buffer = malloc(LARGE_BUFSIZE);
+        int n = (int) LARGE_BUFSIZE;
+
+        pos = file_size - n;
+
+        if (pos < 0)
+            pos = 0;
+        fseek(fp, pos, SEEK_SET);
+        read = fread(big_buffer, sizeof(char), n, fp);
+        p = find_pattern(big_buffer, read, end_cdr_sig, sizeof(end_cdr_sig));
+        assert(p != NULL, "Unable to find end of archive");
+        end_cdr = *((ENDCDR *) p);
+        end_cdr_offset = pos + (p - big_buffer);
+        free(big_buffer);
+    }
+    end_cdr_offset -= end_cdr.cdsize + end_cdr.cdoffset;
+    /*
+     * end_cdr_offset should now be pointing to the start of the archive,
+     * i.e. just after the shebang. We'll assume the shebang line has no
+     * # or ! chars except at the beginning, and fits into bufsize (which
+     * should be MAX_PATH).
+     */
+    pos = end_cdr_offset - bufsize;
+    if (pos < 0)
+        pos = 0;
+    fseek(fp, pos, SEEK_SET);
+    read = fread(buffer, sizeof(char), bufsize, fp);
+    assert(read > 0, "Unable to read from file");
+    p = &buffer[read - 1];
+    while (p >= buffer) {
+        if (memcmp(p, "#!", 2) == 0) {
+            result = p;
+            break;
+        }
+        --p;
+    }
+    fclose(fp);
+    return result;
+}
+
+#endif
 
 static char *
 skip_ws(char *p)
@@ -212,40 +331,48 @@ static int
 process(int argc, char * argv[])
 {
     char * cmdline = skip_me(GetCommandLine());
-    char me[MAX_PATH];
-    char * pme;
-    char * p;
-    size_t len = GetModuleFileName(NULL, me, MAX_PATH);
-
+    char * psp;
+    size_t len = GetModuleFileName(NULL, script_path, MAX_PATH);
     FILE *fp = NULL;
     char buffer[MAX_PATH];
     char *cp;
     char * cmdp;
+    char * p;
+#if !defined(APPENDED_ARCHIVE)
+    errno_t rc;
+#endif
 
-    if (me[0] != '\"')
-        pme = me;
+    if (script_path[0] != '\"')
+        psp = script_path;
     else {
-        pme = &me[1];
+        psp = &script_path[1];
         len -= 2;
     }
-    pme[len] = '\0';
+    psp[len] = '\0';
 
+#if !defined(APPENDED_ARCHIVE)
     /* Replace the .exe with -script.py(w) */
-    p = strstr(pme, ".exe");
+    p = strstr(psp, ".exe");
     assert(p != NULL, "Failed to find \".exe\" in executable name");
 
-    len = MAX_PATH - (p - me);
+    len = MAX_PATH - (p - script_path);
     assert(len > sizeof(suffix), "Failed to append \"%s\" suffix", suffix);
-    strncpy(p, suffix, sizeof(suffix));
-    fp = fopen(pme, "rb");
-    assert(fp != NULL, "Failed to open script file \"%s\"",
-           pme);
+    strncpy_s(p, len, suffix, sizeof(suffix));
+#endif
+#if defined(APPENDED_ARCHIVE)
+    p = find_shebang(buffer, MAX_PATH);
+    assert(p != NULL, "Failed to find shebang");
+#else
+    rc = fopen_s(&fp, psp, "rb");
+    assert(rc == 0, "Failed to open script file \"%s\"", psp);
     fread(buffer, sizeof(char), MAX_PATH, fp);
     fclose(fp);
-    cp = find_terminator(buffer, MAX_PATH);
+    p = buffer;
+#endif
+    cp = find_terminator(p, MAX_PATH);
     assert(cp != NULL, "Expected to find terminator in shebang line");
     *cp = '\0';
-    cp = buffer;
+    cp = p;
     while (*cp && isspace(*cp))
         ++cp;
     assert(*cp == '#', "Expected to find \'#\' at start of shebang line");
@@ -256,11 +383,11 @@ process(int argc, char * argv[])
     ++cp;
     while (*cp && isspace(*cp))
         ++cp;
-    len = strlen(cp) + 3 + strlen(pme) + strlen(cmdline);   /* 2 spaces + NUL */
+    len = strlen(cp) + 3 + strlen(psp) + strlen(cmdline);   /* 2 spaces + NUL */
     cmdp = calloc(len, sizeof(char));
     assert(cmdp != NULL, "Expected to be able to allocate command line memory");
-    _snprintf(cmdp, len, "%s %s %s", cp, pme, cmdline);
-    run_child(cmdp);
+    _snprintf_s(cmdp, len, len, "%s %s %s", cp, psp, cmdline);
+    run_child(cmdp);  /* never actually returns */
     free(cmdp);
 	return 0;
 }
