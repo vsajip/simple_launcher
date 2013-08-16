@@ -114,8 +114,11 @@ typedef struct {
     DWORD cdoffset;
 } ENDCDR;
 
+/* We don't want to pick up this variable when scanning the executable.
+ * So we initialise it dynamically instead of statically.
+ */
 static char
-end_cdr_sig [] = { 0x50, 0x4B, 0x05, 0x06 };
+end_cdr_sig [4];    /* = { 0x50, 0x4B, 0x05, 0x06,  }; */
 
 static char *
 find_pattern(char *buffer, size_t bufsize, char * pattern, size_t patsize)
@@ -179,7 +182,7 @@ find_shebang(char * buffer, size_t bufsize)
         fseek(fp, pos, SEEK_SET);
         read = fread(big_buffer, sizeof(char), n, fp);
         p = find_pattern(big_buffer, read, end_cdr_sig, sizeof(end_cdr_sig));
-        assert(p != NULL, "Unable to find end of archive");
+        assert(p != NULL, "Unable to find an appended archive.");
         end_cdr = *((ENDCDR *) p);
         end_cdr_offset = pos + (p - big_buffer);
         free(big_buffer);
@@ -360,6 +363,14 @@ process(int argc, char * argv[])
     strncpy_s(p, len, suffix, sizeof(suffix));
 #endif
 #if defined(APPENDED_ARCHIVE)
+    /* Initialise signature dynamically so that it doesn't appear in
+     * a stock executable.
+     */
+    end_cdr_sig[0] = 0x50;
+    end_cdr_sig[1] = 0x4B;
+    end_cdr_sig[2] = 0x05;
+    end_cdr_sig[3] = 0x06;
+
     p = find_shebang(buffer, MAX_PATH);
     assert(p != NULL, "Failed to find shebang");
 #else
