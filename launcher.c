@@ -115,10 +115,10 @@ typedef struct {
 } ENDCDR;
 
 /* We don't want to pick up this variable when scanning the executable.
- * So we initialise it dynamically instead of statically.
+ * So we initialise it statically, but fill in the first byte later.
  */
 static char
-end_cdr_sig [4];    /* = { 0x50, 0x4B, 0x05, 0x06,  }; */
+end_cdr_sig [4] = { 0x00, 0x4B, 0x05, 0x06 };
 
 static char *
 find_pattern(char *buffer, size_t bufsize, char * pattern, size_t patsize)
@@ -209,6 +209,46 @@ find_shebang(char * buffer, size_t bufsize)
         --p;
     }
     fclose(fp);
+    return result;
+}
+
+#endif
+
+#if 0
+static COMMAND * find_on_path(wchar_t * name)
+{
+    wchar_t * pathext;
+    size_t    varsize;
+    wchar_t * context = NULL;
+    wchar_t * extension;
+    COMMAND * result = NULL;
+    DWORD     len;
+    errno_t   rc;
+
+    wcscpy_s(path_command.key, MAX_PATH, name);
+    if (wcschr(name, L'.') != NULL) {
+        /* assume it has an extension. */
+        len = SearchPathW(NULL, name, NULL, MSGSIZE, path_command.value, NULL);
+        if (len) {
+            result = &path_command;
+        }
+    }
+    else {
+        /* No extension - search using registered extensions. */
+        rc = _wdupenv_s(&pathext, &varsize, L"PATHEXT");
+        if (rc == 0) {
+            extension = wcstok_s(pathext, L";", &context);
+            while (extension) {
+                len = SearchPathW(NULL, name, extension, MSGSIZE, path_command.value, NULL);
+                if (len) {
+                    result = &path_command;
+                    break;
+                }
+                extension = wcstok_s(NULL, L";", &context);
+            }
+            free(pathext);
+        }
+    }
     return result;
 }
 
@@ -367,9 +407,6 @@ process(int argc, char * argv[])
      * a stock executable.
      */
     end_cdr_sig[0] = 0x50;
-    end_cdr_sig[1] = 0x4B;
-    end_cdr_sig[2] = 0x05;
-    end_cdr_sig[3] = 0x06;
 
     p = find_shebang(buffer, MAX_PATH);
     assert(p != NULL, "Failed to find shebang");
@@ -394,10 +431,10 @@ process(int argc, char * argv[])
     ++cp;
     while (*cp && isspace(*cp))
         ++cp;
-    len = strlen(cp) + 3 + strlen(psp) + strlen(cmdline);   /* 2 spaces + NUL */
+    len = strlen(cp) + 7 + strlen(psp) + strlen(cmdline);   /* 2 spaces + 4 quotes + NUL */
     cmdp = calloc(len, sizeof(char));
     assert(cmdp != NULL, "Expected to be able to allocate command line memory");
-    _snprintf_s(cmdp, len, len, "%s %s %s", cp, psp, cmdline);
+    _snprintf_s(cmdp, len, len, "\"%s\" \"%s\" %s", cp, psp, cmdline);
     run_child(cmdp);  /* never actually returns */
     free(cmdp);
 	return 0;
