@@ -25,3 +25,8 @@ executable, if found, is launched with the script and other arguments passed:
 
 foo a b c -> c:\path\to\python.exe c:\other\path\to\foo-script.py a b c
 bar d e f -> c:\path\to\pythonw.exe c:\other\path\to\bar-script.pyw d e f
+
+Note: More recently, the launchers have been updated to find their script in an
+archive appended to the executable, rather than a separate file. (This variant
+is enabled when APPENDED_ARCHIVE is #defined). This allows the launchers to be
+used to e.g. run .pyz archives as native Windows executables.
