@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-2013 Vinay Sajip. All rights reserved.
+ * Copyright (C) 2011-2014 Vinay Sajip. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -23,7 +23,12 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "stdafx.h"
+#ifndef _WIN32_WINNT            // Specifies that the minimum required platform is Windows Vista.
+#define _WIN32_WINNT 0x0600     // Change this to the appropriate value to target other versions of Windows.
+#endif
+
+#include <stdio.h>
+#include <windows.h>
 
 #define APPENDED_ARCHIVE
 
