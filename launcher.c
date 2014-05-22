@@ -431,6 +431,12 @@ process(int argc, char * argv[])
     ++cp;
     while (*cp && isspace(*cp))
         ++cp;
+    if (*cp == '"') {
+        ++cp;
+        p = strrchr(cp, '"');
+        assert(p != NULL, "Expected to find terminating quote in shebang line");
+        *p = '\0';
+    }
     len = strlen(cp) + 7 + strlen(psp) + strlen(cmdline);   /* 2 spaces + 4 quotes + NUL */
     cmdp = calloc(len, sizeof(char));
     assert(cmdp != NULL, "Expected to be able to allocate command line memory");
