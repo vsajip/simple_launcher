@@ -1,2 +1,2 @@
-(Debug|Release|dist)/
+(Debug|Release|dist|ipch|test)/
 \.(ncb|suo|user|sdf|opensdf)$

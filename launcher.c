@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-2015 Vinay Sajip. All rights reserved.
+ * Copyright (C) 2011-2016 Vinay Sajip. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -222,24 +222,26 @@ find_shebang(char * buffer, size_t bufsize)
 
 #endif
 
-#if 0
-static COMMAND * find_on_path(wchar_t * name)
+/*
+ * Where to place any executable found on the path. Should be OK to use a
+ * static as there's only one of these per invocation.
+ */
+static wchar_t path_executable[MSGSIZE];
+
+static BOOL find_on_path(wchar_t * name)
 {
     wchar_t * pathext;
     size_t    varsize;
     wchar_t * context = NULL;
     wchar_t * extension;
-    COMMAND * result = NULL;
     DWORD     len;
     errno_t   rc;
+    BOOL found = FALSE;
 
-    wcscpy_s(path_command.key, MAX_PATH, name);
     if (wcschr(name, L'.') != NULL) {
         /* assume it has an extension. */
-        len = SearchPathW(NULL, name, NULL, MSGSIZE, path_command.value, NULL);
-        if (len) {
-            result = &path_command;
-        }
+        if (SearchPathW(NULL, name, NULL, MSGSIZE, path_executable, NULL))
+            found = TRUE;
     }
     else {
         /* No extension - search using registered extensions. */
@@ -247,9 +249,9 @@ static COMMAND * find_on_path(wchar_t * name)
         if (rc == 0) {
             extension = wcstok_s(pathext, L";", &context);
             while (extension) {
-                len = SearchPathW(NULL, name, extension, MSGSIZE, path_command.value, NULL);
+                len = SearchPathW(NULL, name, extension, MSGSIZE, path_executable, NULL);
                 if (len) {
-                    result = &path_command;
+                    found = TRUE;
                     break;
                 }
                 extension = wcstok_s(NULL, L";", &context);
@@ -257,10 +259,8 @@ static COMMAND * find_on_path(wchar_t * name)
             free(pathext);
         }
     }
-    return result;
+    return found;
 }
-
-#endif
 
 static wchar_t *
 skip_ws(wchar_t *p)
@@ -379,7 +379,7 @@ run_child(wchar_t * cmdline)
 }
 
 static wchar_t *
-find_exe(wchar_t * line) {
+find_exe_extension(wchar_t * line) {
     wchar_t * p;
 
     while ((p = StrStrIW(line, L".exe")) != NULL) {
@@ -393,19 +393,43 @@ find_exe(wchar_t * line) {
 }
 
 static wchar_t *
+find_special_executable(wchar_t * line) {
+    BOOL found = find_on_path(line);
+
+    return found ? path_executable : NULL;
+}
+
+static wchar_t *
 find_executable_and_args(wchar_t * line, wchar_t ** argp)
 {
-    wchar_t * p = find_exe(line);
+    wchar_t * p = find_exe_extension(line);
+    int n;
+    wchar_t * result;
 
-    assert(p != NULL, "Expected to find a command ending in '.exe' in shebang line.");
-    p += 4;
+    if (p != NULL) {
+        p += 4; /* skip past the '.exe' */
+        result = line;
+    }
+    else {
+        n = _wcsnicmp(line, L"/usr/bin/env", 12);
+        assert(n == 0, "Expected to find a command ending in '.exe' in shebang line: %S", line);
+        p = line + 12; /* past the '/usr/bin/env' */
+        assert(*p && iswspace(*p), "Expected to find whitespace after '/usr/bin/env': %S", line);
+        do {
+            ++p;
+        } while (*p && iswspace(*p));
+        result = find_special_executable(p);
+        assert(result != NULL, "Unable to find executable in environment: %S", line);
+        while (*p && !iswspace(*p))
+            ++p;
+    }
     if (*line == L'"') {
-        assert(*p == L'"', "Expected terminating double-quote for executable in shebang line.");
+        assert(*p == L'"', "Expected terminating double-quote for executable in shebang line: %S", line);
         *p++ = L'\0';
         ++line;
     }
     /* p points just past the executable. It must either be a NUL or whitespace. */
-    assert(*p != L'"', "Terminating quote without starting quote for executable in shebang line.");
+    assert(*p != L'"', "Terminating quote without starting quote for executable in shebang line: %S", line);
     /* if p is whitespace, make it NUL to truncate 'line', and advance */
     if (*p && iswspace(*p))
         *p++ = L'\0';
@@ -413,7 +437,7 @@ find_executable_and_args(wchar_t * line, wchar_t ** argp)
     while(*p && iswspace(*p))
         ++p;
     *argp = p;
-    return line;
+    return result;
 }
 
 static int
@@ -513,4 +537,5 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 {
     return process(__argc, __argv);
 }
+
 #endif
