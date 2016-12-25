@@ -18,8 +18,7 @@ def main():
     archive_data = io.BytesIO()
     with zipfile.ZipFile(archive_data, 'w', zipfile.ZIP_DEFLATED) as zf:
         zf.writestr('__main__.py', script_data)
-    shebang = b'#!/usr/bin/env python3\n'
-    # shebang = b'#!python.exe\n'
+    shebang = b'#!/usr/bin/env python3 -u\n'
     with open('x64/Debug/CLISimpleLauncher.exe', 'rb') as f:
         launcher_data = f.read()
     data = launcher_data + shebang + archive_data.getvalue()
