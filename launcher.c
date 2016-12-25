@@ -34,6 +34,7 @@
 #pragma comment (lib, "Shlwapi.lib")
 
 #define APPENDED_ARCHIVE
+#define USE_ENVIRONMENT
 
 #define MSGSIZE 1024
 
@@ -222,9 +223,10 @@ find_shebang(char * buffer, size_t bufsize)
 
 #endif
 
+#if defined(USE_ENVIRONMENT)
 /*
  * Where to place any executable found on the path. Should be OK to use a
- * static as there's only one of these per invocation.
+ * static as there's only one of these per invocation of this executable.
  */
 static wchar_t path_executable[MSGSIZE];
 
@@ -246,6 +248,7 @@ static BOOL find_on_path(wchar_t * name)
     else {
         /* No extension - search using registered extensions. */
         rc = _wdupenv_s(&pathext, &varsize, L"PATHEXT");
+        _wcslwr_s(pathext, varsize);
         if (rc == 0) {
             extension = wcstok_s(pathext, L";", &context);
             while (extension) {
@@ -261,6 +264,19 @@ static BOOL find_on_path(wchar_t * name)
     }
     return found;
 }
+
+/*
+ * Find an executable in the environment. For now, we just look in the path,
+ * but potentially we could expand this to look in the registry, etc.
+ */
+static wchar_t *
+find_environment_executable(wchar_t * line) {
+    BOOL found = find_on_path(line);
+
+    return found ? path_executable : NULL;
+}
+
+#endif
 
 static wchar_t *
 skip_ws(wchar_t *p)
@@ -393,19 +409,20 @@ find_exe_extension(wchar_t * line) {
 }
 
 static wchar_t *
-find_special_executable(wchar_t * line) {
-    BOOL found = find_on_path(line);
-
-    return found ? path_executable : NULL;
-}
-
-static wchar_t *
 find_executable_and_args(wchar_t * line, wchar_t ** argp)
 {
     wchar_t * p = find_exe_extension(line);
+#if defined(USE_ENVIRONMENT)
+    wchar_t * q;
     int n;
+#endif
     wchar_t * result;
 
+#if !defined(USE_ENVIRONMENT)
+    assert(p != NULL, "Expected to find a command ending in '.exe' in shebang line: %S", line);
+    p += 4; /* skip past the '.exe' */
+    result = line;
+#else
     if (p != NULL) {
         p += 4; /* skip past the '.exe' */
         result = line;
@@ -418,11 +435,18 @@ find_executable_and_args(wchar_t * line, wchar_t ** argp)
         do {
             ++p;
         } while (*p && iswspace(*p));
-        result = find_special_executable(p);
+        /* Now, p points to what comes after /usr/bin/env and any following whitespace. */
+        q = p;
+        /* Skip past executable name and NUL-terminate it. */
+        while (*q && !iswspace(*q))
+            ++q;
+        if (iswspace(*q))
+            *q++ = L'\0';
+        result = find_environment_executable(p);
         assert(result != NULL, "Unable to find executable in environment: %S", line);
-        while (*p && !iswspace(*p))
-            ++p;
+        p = q; /* point past name of executable in shebang */
     }
+#endif
     if (*line == L'"') {
         assert(*p == L'"', "Expected terminating double-quote for executable in shebang line: %S", line);
         *p++ = L'\0';
