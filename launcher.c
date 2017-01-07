@@ -384,7 +384,7 @@ run_child(wchar_t * cmdline)
     si.dwFlags = STARTF_USESTDHANDLES;
     SetConsoleCtrlHandler((PHANDLER_ROUTINE) control_key_handler, TRUE);
     ok = CreateProcessW(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
-    assert(ok, "Unable to create process using '%s'", cmdline);
+    assert(ok, "Unable to create process using '%S'", cmdline);
     pid = pi.dwProcessId;
     AssignProcessToJobObject(job, pi.hProcess);
     CloseHandle(pi.hThread);
@@ -497,7 +497,7 @@ process(int argc, char * argv[])
     assert(wp != NULL, "Failed to find \".exe\" in executable name");
 
     len = MAX_PATH - (wp - script_path);
-    assert(len > sizeof(suffix), "Failed to append \"%s\" suffix", suffix);
+    assert(len > sizeof(suffix), "Failed to append \"%S\" suffix", suffix);
     wcsncpy_s(wp, len, suffix, sizeof(suffix));
 #endif
 #if defined(APPENDED_ARCHIVE)
@@ -510,7 +510,7 @@ process(int argc, char * argv[])
     assert(p != NULL, "Failed to find shebang");
 #else
     rc = _wfopen_s(&fp, psp, L"rb");
-    assert(rc == 0, "Failed to open script file \"%s\"", psp);
+    assert(rc == 0, "Failed to open script file '%S'", psp);
     fread(buffer, sizeof(char), MAX_PATH, fp);
     fclose(fp);
     p = buffer;
@@ -541,7 +541,7 @@ process(int argc, char * argv[])
     len = wcslen(wcp) + wcslen(wp) + 8 + wcslen(psp) + wcslen(cmdline);
     cmdp = (wchar_t *) calloc(len, sizeof(wchar_t));
     assert(cmdp != NULL, "Expected to be able to allocate command line memory");
-    _snwprintf_s(cmdp, len, len, L"\"%s\" %s \"%s\" %s", wcp, wp, psp, cmdline);
+    _snwprintf_s(cmdp, len, len, L"\"%S\" %S \"%S\" %S", wcp, wp, psp, cmdline);
     run_child(cmdp);  /* never actually returns */
     free(cmdp);
     return 0;
