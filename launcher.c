@@ -544,7 +544,11 @@ process(int argc, char * argv[])
     assert(wcp != NULL, "Expected to find executable in shebang line");
     assert(wp != NULL, "Expected to find arguments (even if empty) in shebang line");
 #if defined(SUPPORT_RELATIVE_PATH)
-    if (PathIsRelativeW(wcp)) {
+    /*
+       If the executable is not just "python.exe" and has a relative path, resolve it
+       relative tot this executable.
+     */
+    if (wcsnicmp(L"python.exe", wcp, 10) && PathIsRelativeW(wcp)) {
         wcscpy_s(dbuffer, MAX_PATH, script_path);
         PathRemoveFileSpecW(dbuffer);
         PathCombineW(pbuffer, dbuffer, wcp);  // appears to canonicalize the path
