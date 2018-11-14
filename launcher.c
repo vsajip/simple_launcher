@@ -35,6 +35,7 @@
 
 #define APPENDED_ARCHIVE
 #define USE_ENVIRONMENT
+#define SUPPORT_RELATIVE_PATH
 
 #define MSGSIZE 1024
 
@@ -474,6 +475,10 @@ process(int argc, char * argv[])
     FILE *fp = NULL;
     char buffer[MAX_PATH];
     wchar_t wbuffer[MAX_PATH];
+#if defined(SUPPORT_RELATIVE_PATH)
+    wchar_t dbuffer[MAX_PATH];
+    wchar_t pbuffer[MAX_PATH];
+#endif
     char *cp;
     wchar_t * wcp;
     wchar_t * cmdp;
@@ -538,6 +543,14 @@ process(int argc, char * argv[])
     wcp = find_executable_and_args(wcp, &wp);
     assert(wcp != NULL, "Expected to find executable in shebang line");
     assert(wp != NULL, "Expected to find arguments (even if empty) in shebang line");
+#if defined(SUPPORT_RELATIVE_PATH)
+    if ((wcsncmp(wcp, L"..\\", 3) == 0) && PathIsRelativeW(wcp)) {
+        wcsncpy(dbuffer, script_path, MAX_PATH);
+        PathRemoveFileSpecW(dbuffer);
+        PathCombineW(pbuffer, dbuffer, wcp);  // appears to canonicalize the path
+        wcp = pbuffer;
+    }
+#endif
      /* 3 spaces + 4 quotes + NUL */
     len = wcslen(wcp) + wcslen(wp) + 8 + wcslen(psp) + wcslen(cmdline);
     cmdp = (wchar_t *) calloc(len, sizeof(wchar_t));
