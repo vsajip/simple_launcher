@@ -545,7 +545,7 @@ process(int argc, char * argv[])
     assert(wp != NULL, "Expected to find arguments (even if empty) in shebang line");
 #if defined(SUPPORT_RELATIVE_PATH)
     if ((wcsncmp(wcp, L"..\\", 3) == 0) && PathIsRelativeW(wcp)) {
-        wcsncpy(dbuffer, script_path, MAX_PATH);
+        wcscpy_s(dbuffer, MAX_PATH, script_path);
         PathRemoveFileSpecW(dbuffer);
         PathCombineW(pbuffer, dbuffer, wcp);  // appears to canonicalize the path
         wcp = pbuffer;
