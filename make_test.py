@@ -18,6 +18,7 @@ print(sys.executable)
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--shebang', help='Specify shebang to add')
+    parser.add_argument('-o', '--output', help='Specify output filename')
     options = parser.parse_args()
     script_data = MAIN.strip().encode('utf-8')
     archive_data = io.BytesIO()
@@ -29,7 +30,9 @@ def main():
     with open('x64/Debug/CLISimpleLauncher.exe', 'rb') as f:
         launcher_data = f.read()
     data = launcher_data + shebang + archive_data.getvalue()
-    with open('test/test.exe', 'wb') as f:
+    if options.output is None:
+        options.output = 'test/test.exe'
+    with open(options.output, 'wb') as f:
         f.write(data)
 
 
