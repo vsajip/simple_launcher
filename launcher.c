@@ -199,24 +199,42 @@ find_shebang(char * buffer, size_t bufsize)
     }
     end_cdr_offset -= end_cdr.cdsize + end_cdr.cdoffset;
     /*
-     * end_cdr_offset should now be pointing to the start of the archive,
-     * i.e. just after the shebang. We'll assume the shebang line has no
-     * # or ! chars except at the beginning, and fits into bufsize (which
-     * should be MAX_PATH).
+     * end_cdr_offset should now be pointing to the start of the archive.
+     * However, the "start of the archive" is a little ill-defined, as
+     * not all means of prepending data to a zipfile handle the central
+     * directory offset the same way (simple file content appends leave
+     * it alone, obviously, but the stdlib zipapp and zipfile modules
+     * reflect the prepended data in the offset).
+     * We consider two possibilities here:
+     * 1. end_cdr_offset points to the start of the shebang (zipapp)
+     * 2. end_cdr_offset points to the end of the shebang (data copy)
+     * We'll assume the shebang line has no # or ! chars except at the
+     * beginning, and fits into bufsize (which should be MAX_PATH).
      */
-    pos = (long) (end_cdr_offset - bufsize);
-    if (pos < 0)
-        pos = 0;
-    fseek(fp, pos, SEEK_SET);
+
+    /* Check for case 1 - we are at the start of the shebang */
+    fseek(fp, end_cdr_offset, SEEK_SET);
     read = fread(buffer, sizeof(char), bufsize, fp);
     assert(read > 0, "Unable to read from file");
-    p = &buffer[read - 1];
-    while (p >= buffer) {
-        if (memcmp(p, "#!", 2) == 0) {
-            result = p;
-            break;
+    if (memcmp(buffer, "#!", 2) == 0) {
+        result = buffer;
+    }
+    else {
+        /* We are not at the start, so check backward bufsize bytes */
+        pos = (long) (end_cdr_offset - bufsize);
+        if (pos < 0)
+            pos = 0;
+        fseek(fp, pos, SEEK_SET);
+        read = fread(buffer, sizeof(char), bufsize, fp);
+        assert(read > 0, "Unable to read from file");
+        p = &buffer[read - 1];
+        while (p >= buffer) {
+            if (memcmp(p, "#!", 2) == 0) {
+                result = p;
+                break;
+            }
+            --p;
         }
-        --p;
     }
     fclose(fp);
     return result;
