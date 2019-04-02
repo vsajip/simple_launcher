@@ -51,6 +51,13 @@ static wchar_t suffix[] = {
 
 #endif
 
+#if defined(SUPPORT_RELATIVE_PATH)
+
+#define RELATIVE_PREFIX L"<launcher_dir>\\"
+#define RELATIVE_PREFIX_LENGTH 15
+
+#endif
+
 static int pid = 0;
 
 #if !defined(_CONSOLE)
@@ -455,7 +462,13 @@ find_executable_and_args(wchar_t * line, wchar_t ** argp)
         ++result;  /* See https://bitbucket.org/pypa/distlib/issues/104 */
     }
     /* p points just past the executable. It must either be a NUL or whitespace. */
+#if !defined(SUPPORT_RELATIVE_PATH)
     assert(*p != L'"', "Terminating quote without starting quote for executable in shebang line: %ls", line);
+#else
+    if (_wcsnicmp(line, RELATIVE_PREFIX, RELATIVE_PREFIX_LENGTH) && (line[RELATIVE_PREFIX_LENGTH] != L'\"')) {
+        assert(*p != L'"', "Terminating quote without starting quote for executable in shebang line: %ls", line);
+    }
+#endif
     /* if p is whitespace, make it NUL to truncate 'line', and advance */
     if (*p && iswspace(*p))
         *p++ = L'\0';
@@ -478,6 +491,8 @@ process(int argc, char * argv[])
 #if defined(SUPPORT_RELATIVE_PATH)
     wchar_t dbuffer[MAX_PATH];
     wchar_t pbuffer[MAX_PATH];
+    wchar_t * qp;
+    int prefix_offset;
 #endif
     char *cp;
     wchar_t * wcp;
@@ -545,13 +560,22 @@ process(int argc, char * argv[])
     assert(wp != NULL, "Expected to find arguments (even if empty) in shebang line");
 #if defined(SUPPORT_RELATIVE_PATH)
     /*
-       If the executable is not just "python.exe" and has a relative path, resolve it
-       relative tot this executable.
+       If the executable starts with the relative prefix, resolve the following path
+       relative to the launcher's directory.
      */
-    if (wcsnicmp(L"python.exe", wcp, 10) && PathIsRelativeW(wcp)) {
+    prefix_offset = RELATIVE_PREFIX_LENGTH;
+    if (!_wcsnicmp(RELATIVE_PREFIX, wcp, prefix_offset)) {
         wcscpy_s(dbuffer, MAX_PATH, script_path);
         PathRemoveFileSpecW(dbuffer);
-        PathCombineW(pbuffer, dbuffer, wcp);  // appears to canonicalize the path
+        if (wcp[prefix_offset] == L'\"') {
+            prefix_offset++;
+            qp = wcschr(&wcp[prefix_offset], L'\"');
+            assert(qp != NULL, "Expected terminating double-quote for executable in shebang line: %ls", wcp);
+            *qp = L'\0';
+        }
+        // The following call appears to canonicalize the path, so no need to
+        // worry about doing that
+        PathCombineW(pbuffer, dbuffer, &wcp[prefix_offset]);
         wcp = pbuffer;
     }
 #endif

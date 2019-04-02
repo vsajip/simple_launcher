@@ -1,2 +1,2 @@
-(Debug|Release|dist|ipch|test)/
+(Debug|Release|dist|ipch|test|path with spaces)/
 \.(ncb|suo|user|sdf|opensdf)$

@@ -26,6 +26,10 @@ def main():
         zf.writestr('__main__.py', script_data)
     if options.shebang is None:
         options.shebang = '/usr/bin/env python3 -u'
+    else:
+        # hard to escape double quotes in command line, so replace
+        # single quotes with double
+        options.shebang = options.shebang.replace('\'', '"')
     shebang = ('#!%s\n' % options.shebang).encode('utf-8')
     with open('x64/Debug/CLISimpleLauncher.exe', 'rb') as f:
         launcher_data = f.read()
