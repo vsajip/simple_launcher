@@ -31,14 +31,15 @@ def main():
         # single quotes with double
         options.shebang = options.shebang.replace('\'', '"')
     shebang = ('#!%s\n' % options.shebang).encode('utf-8')
-    with open('x64/Debug/CLISimpleLauncher.exe', 'rb') as f:
-        launcher_data = f.read()
-    data = launcher_data + shebang + archive_data.getvalue()
     if options.output is None:
         options.output = 'test/test.exe'
-    with open(options.output, 'wb') as f:
-        f.write(data)
-    if options.output == 'test/test.exe':
+    if os.path.exists('x64/Debug/CLISimpleLauncher.exe'):
+        with open('x64/Debug/CLISimpleLauncher.exe', 'rb') as f:
+            launcher_data = f.read()
+        data = launcher_data + shebang + archive_data.getvalue()
+        with open(options.output, 'wb') as f:
+            f.write(data)
+    if options.output == 'test/test.exe' and os.path.exists('x64/Debug/GUISimpleLauncher.exe'):
         with open('x64/Debug/GUISimpleLauncher.exe', 'rb') as f:
             launcher_data = f.read()
         data = launcher_data + shebang + archive_data.getvalue()
