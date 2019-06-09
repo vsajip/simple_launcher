@@ -38,6 +38,13 @@ def main():
         options.output = 'test/test.exe'
     with open(options.output, 'wb') as f:
         f.write(data)
+    if options.output == 'test/test.exe':
+        with open('x64/Debug/GUISimpleLauncher.exe', 'rb') as f:
+            launcher_data = f.read()
+        data = launcher_data + shebang + archive_data.getvalue()
+        with open('test/testw.exe', 'wb') as f:
+            f.write(data)
+        
 
 
 
