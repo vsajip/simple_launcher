@@ -34,9 +34,9 @@ concatenation of, in order, the following:
    windowed application is wanted, and whether it's 32-bit or 64-bit. So
    there are four possible launchers stubs, usually deployed as t32.exe,
    t64.exe, w32.exe and w64.exe.
-1. A POSIX-format shebang line which is terminated with a newline. This
+2. A POSIX-format shebang line which is terminated with a newline. This
    must be UTF-8 encoded.
-1. A .zip archive containing foo.py, in the format for ZIP archives
+3. A .zip archive containing foo.py, in the format for ZIP archives
    required by a script executor such as a Python interpreter, such that
    "python foo.zip" would execute the script foo.py in the same way as
    "python foo.py". See `PEP 273
@@ -58,7 +58,7 @@ is then used to construct a command line. For example, the shebang line::
 
     #!/usr/bin/env python -u
 
-might be converted to::
+in ``foo.exe`` might be converted to::
 
     c:\Python37\python.exe -u foo.exe
 
