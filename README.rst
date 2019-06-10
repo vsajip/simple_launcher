@@ -39,7 +39,9 @@ concatenation of, in order, the following:
 1. A .zip archive containing foo.py, in the format for ZIP archives
    required by a script executor such as a Python interpreter, such that
    "python foo.zip" would execute the script foo.py in the same way as
-   "python foo.py". See `PEP 273` for how Python runs .zip archives.
+   "python foo.py". See `PEP 273
+   <https://www.python.org/dev/peps/pep-0273/>`_ for how Python runs
+   .zip archives.
 
 The shebang line will be of the form::
 
