@@ -9,3 +9,4 @@ path with spaces
 *.user
 *.sdf
 *opensdf
+.vs/
