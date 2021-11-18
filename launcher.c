@@ -443,6 +443,11 @@ control_key_handler(DWORD type)
     return TRUE;
 }
 
+/*
+ * See https://github.com/pypa/pip/issues/10444#issuecomment-971921420
+ */
+#define STARTF_UNDOC_MONITOR 0x400
+
 static void
 run_child(wchar_t * cmdline)
 {
@@ -453,7 +458,25 @@ run_child(wchar_t * cmdline)
     STARTUPINFOW si;
     PROCESS_INFORMATION pi;
 
+#if !defined(_CONSOLE)
+/*
+ * When explorer launches a Windows (GUI) application, it displays
+ * the "app starting" (the "pointer + hourglass") cursor for a number
+ * of seconds, or until the app does something UI-ish (eg, creating a
+ * window, or fetching a message).  As this launcher doesn't do this
+ * directly, that cursor remains even after the child process does these
+ * things.  We avoid that by doing a simple post+get message.
+ * See http://bugs.python.org/issue17290 and
+ * https://bitbucket.org/vinay.sajip/pylauncher/issue/20/busy-cursor-for-a-long-time-when-running
+ */
+    MSG msg;
+
+    PostMessage(0, 0, 0, 0);
+    GetMessage(&msg, 0, 0, 0);
+#endif
+
     job = CreateJobObject(NULL, NULL);
+    assert(job != NULL, "Job creation failed");
     ok = QueryInformationJobObject(job, JobObjectExtendedLimitInformation,
                                   &info, sizeof(info), &rc);
     assert(ok && (rc == sizeof(info)), "Job information querying failed");
@@ -463,15 +486,23 @@ run_child(wchar_t * cmdline)
                                  sizeof(info));
     assert(ok, "Job information setting failed");
     memset(&si, 0, sizeof(si));
-    si.cb = sizeof(si);
-    ok = safe_duplicate_handle(GetStdHandle(STD_INPUT_HANDLE), &si.hStdInput);
-    assert(ok, "stdin duplication failed");
-    ok = safe_duplicate_handle(GetStdHandle(STD_OUTPUT_HANDLE), &si.hStdOutput);
-    assert(ok, "stdout duplication failed");
+    GetStartupInfoW(&si);
+/*
+ * See https://github.com/pypa/pip/issues/10444#issuecomment-971921420
+ */
+    if ((si.dwFlags & STARTF_USEHOTKEY) == 0) {
+        ok = safe_duplicate_handle(GetStdHandle(STD_INPUT_HANDLE), &si.hStdInput);
+        assert(ok, "stdin duplication failed");
+    }
+    if ((si.dwFlags & STARTF_UNDOC_MONITOR) == 0) {
+        ok = safe_duplicate_handle(GetStdHandle(STD_OUTPUT_HANDLE), &si.hStdOutput);
+        assert(ok, "stdout duplication failed");
+    }
     ok = safe_duplicate_handle(GetStdHandle(STD_ERROR_HANDLE), &si.hStdError);
     assert(ok, "stderr duplication failed");
-    si.dwFlags = STARTF_USESTDHANDLES;
-    SetConsoleCtrlHandler((PHANDLER_ROUTINE) control_key_handler, TRUE);
+    si.dwFlags |= STARTF_USESTDHANDLES;
+    ok = SetConsoleCtrlHandler((PHANDLER_ROUTINE) control_key_handler, TRUE);
+    assert(ok, "control handler setting failed");
     ok = CreateProcessW(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
     if (!ok) {
         // Failed to create process. See if we can find out why.
@@ -484,7 +515,7 @@ run_child(wchar_t * cmdline)
     pid = pi.dwProcessId;
     AssignProcessToJobObject(job, pi.hProcess);
     CloseHandle(pi.hThread);
-    WaitForSingleObject(pi.hProcess, INFINITE);
+    WaitForSingleObjectEx(pi.hProcess, INFINITE, FALSE);
     ok = GetExitCodeProcess(pi.hProcess, &rc);
     assert(ok, "Failed to get exit code of process");
     ExitProcess(rc);
