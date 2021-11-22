@@ -58,8 +58,6 @@ static wchar_t suffix[] = {
 
 #endif
 
-static int pid = 0;
-
 #if !defined(_CONSOLE)
 
 typedef int (__stdcall *MSGBOXWAPIA)(IN HWND hWnd,
@@ -271,7 +269,7 @@ find_shebang(char * buffer, size_t bufsize)
      */
 
     /* Check for case 1 - we are at the start of the shebang */
-    fseek(fp, end_cdr_offset, SEEK_SET);
+    fseek(fp, (long) end_cdr_offset, SEEK_SET);
     read = fread(buffer, sizeof(char), bufsize, fp);
     assert(read > 0, "Unable to read from file");
     if (memcmp(buffer, "#!", 2) == 0) {
@@ -435,18 +433,74 @@ safe_duplicate_handle(HANDLE in, HANDLE * pout)
 #endif
 }
 
+/*
+ * The process information structure is global so that it can be accessed
+ * from the Ctrl-C handler.
+ */
+static PROCESS_INFORMATION child_process_info;
+
+#define DELAY_FOR_CHILD_EXIT 5000
+
 static BOOL
 control_key_handler(DWORD type)
 {
-    if ((type == CTRL_C_EVENT) && pid)
-        GenerateConsoleCtrlEvent(pid, 0);
+    if (type == CTRL_C_EVENT) {
+        GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
+    }
+    /*
+     * See https://github.com/pypa/pip/issues/10444
+     */
+    WaitForSingleObject(child_process_info.hProcess, DELAY_FOR_CHILD_EXIT);
     return TRUE;
 }
+
+#if !defined(_CONSOLE)
+
+/*
+ * End the launcher's "app starting" cursor state.
+ *
+ * When Explorer launches a Windows (GUI) application, it displays
+ * the "app starting" (the "pointer + hourglass") cursor for a number
+ * of seconds, or until the app does something UI-ish (eg, creating a
+ * window, or fetching a message).  As this launcher doesn't do this
+ * directly, that cursor remains even after the child process does these
+ * things.  We avoid that by doing the stuff in here.
+ * See http://bugs.python.org/issue17290 and
+ * https://github.com/pypa/pip/issues/10444#issuecomment-973408601
+ */
+
+static void
+clear_app_starting_state(PROCESS_INFORMATION* child_process_info) {
+    MSG msg;
+    HWND hwnd;
+
+    PostMessageW(0, 0, 0, 0);
+    GetMessageW(&msg, 0, 0, 0);
+    /* Proxy the child's input idle event. */
+    WaitForInputIdle(child_process_info->hProcess, INFINITE);
+    /*
+     * Signal the process input idle event by creating a window and pumping
+     * sent messages. The window class isn't important, so just use the
+     * system "STATIC" class.
+     */
+    hwnd = CreateWindowExW(0, L"STATIC", L"PyLauncher", 0, 0, 0, 0, 0,
+                           HWND_MESSAGE, NULL, NULL, NULL);
+    /* Process all sent messages and signal input idle. */
+    PeekMessageW(&msg, hwnd, 0, 0, 0);
+    DestroyWindow(hwnd);
+}
+
+#endif
 
 /*
  * See https://github.com/pypa/pip/issues/10444#issuecomment-971921420
  */
 #define STARTF_UNDOC_MONITOR 0x400
+/*
+ * See https://github.com/pypa/pip/issues/10444#issuecomment-973396812
+ */
+
+#define CLEANUP_LAUNCHER_HANDLES
 
 static void
 run_child(wchar_t * cmdline)
@@ -456,24 +510,6 @@ run_child(wchar_t * cmdline)
     DWORD rc;
     BOOL ok;
     STARTUPINFOW si;
-    PROCESS_INFORMATION pi;
-
-#if !defined(_CONSOLE)
-/*
- * When explorer launches a Windows (GUI) application, it displays
- * the "app starting" (the "pointer + hourglass") cursor for a number
- * of seconds, or until the app does something UI-ish (eg, creating a
- * window, or fetching a message).  As this launcher doesn't do this
- * directly, that cursor remains even after the child process does these
- * things.  We avoid that by doing a simple post+get message.
- * See http://bugs.python.org/issue17290 and
- * https://bitbucket.org/vinay.sajip/pylauncher/issue/20/busy-cursor-for-a-long-time-when-running
- */
-    MSG msg;
-
-    PostMessage(0, 0, 0, 0);
-    GetMessage(&msg, 0, 0, 0);
-#endif
 
     job = CreateJobObject(NULL, NULL);
     assert(job != NULL, "Job creation failed");
@@ -488,22 +524,30 @@ run_child(wchar_t * cmdline)
     memset(&si, 0, sizeof(si));
     GetStartupInfoW(&si);
 /*
- * See https://github.com/pypa/pip/issues/10444#issuecomment-971921420
+ * See https://github.com/pypa/pip/issues/10444#issuecomment-973396812
  */
-    if ((si.dwFlags & STARTF_USEHOTKEY) == 0) {
-        ok = safe_duplicate_handle(GetStdHandle(STD_INPUT_HANDLE), &si.hStdInput);
+    if ((si.dwFlags & (STARTF_USEHOTKEY | STARTF_UNDOC_MONITOR)) == 0) {
+        HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
+        HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        HANDLE hErr = GetStdHandle(STD_ERROR_HANDLE);
+
+        ok = safe_duplicate_handle(hIn, &si.hStdInput);
         assert(ok, "stdin duplication failed");
-    }
-    if ((si.dwFlags & STARTF_UNDOC_MONITOR) == 0) {
-        ok = safe_duplicate_handle(GetStdHandle(STD_OUTPUT_HANDLE), &si.hStdOutput);
+#if defined(CLEANUP_LAUNCHER_HANDLES)
+        CloseHandle(hIn);
+#endif
+        ok = safe_duplicate_handle(hOut, &si.hStdOutput);
         assert(ok, "stdout duplication failed");
+#if defined(CLEANUP_LAUNCHER_HANDLES)
+        CloseHandle(hOut);
+        /* We might need stderr late, so don't close it but mark as non-inheritable */
+        SetHandleInformation(hErr, HANDLE_FLAG_INHERIT, 0);
+#endif
+        ok = safe_duplicate_handle(hErr, &si.hStdError);
+        assert(ok, "stderr duplication failed");
+        si.dwFlags |= STARTF_USESTDHANDLES;
     }
-    ok = safe_duplicate_handle(GetStdHandle(STD_ERROR_HANDLE), &si.hStdError);
-    assert(ok, "stderr duplication failed");
-    si.dwFlags |= STARTF_USESTDHANDLES;
-    ok = SetConsoleCtrlHandler((PHANDLER_ROUTINE) control_key_handler, TRUE);
-    assert(ok, "control handler setting failed");
-    ok = CreateProcessW(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
+    ok = CreateProcessW(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &child_process_info);
     if (!ok) {
         // Failed to create process. See if we can find out why.
         DWORD err = GetLastError();
@@ -512,11 +556,19 @@ run_child(wchar_t * cmdline)
                        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), emessage, MSGSIZE, NULL);
         wassert(ok, L"Unable to create process using '%ls': %ls", cmdline, emessage);
     }
-    pid = pi.dwProcessId;
-    AssignProcessToJobObject(job, pi.hProcess);
-    CloseHandle(pi.hThread);
-    WaitForSingleObjectEx(pi.hProcess, INFINITE, FALSE);
-    ok = GetExitCodeProcess(pi.hProcess, &rc);
+    /*
+     * Control handler setting is now done after process creation because the handler needs access
+     * to the child_process_info structure, which is populated by the CreateProcessW call above.
+     */
+    ok = SetConsoleCtrlHandler((PHANDLER_ROUTINE) control_key_handler, TRUE);
+    assert(ok, "control handler setting failed");
+#if !defined(_CONSOLE)
+    clear_app_starting_state(&child_process_info);
+#endif
+    AssignProcessToJobObject(job, child_process_info.hProcess);
+    CloseHandle(child_process_info.hThread);
+    WaitForSingleObjectEx(child_process_info.hProcess, INFINITE, FALSE);
+    ok = GetExitCodeProcess(child_process_info.hProcess, &rc);
     assert(ok, "Failed to get exit code of process");
     ExitProcess(rc);
 }
