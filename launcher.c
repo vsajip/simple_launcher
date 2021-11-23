@@ -439,18 +439,16 @@ safe_duplicate_handle(HANDLE in, HANDLE * pout)
  */
 static PROCESS_INFORMATION child_process_info;
 
-#define DELAY_FOR_CHILD_EXIT 5000
-
 static BOOL
 control_key_handler(DWORD type)
 {
-    if (type == CTRL_C_EVENT) {
-        GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
+/*
+ * See https://github.com/pypa/pip/issues/10444
+ */
+    if ((type == CTRL_C_EVENT) || (type == CTRL_BREAK_EVENT)) {
+        return TRUE;
     }
-    /*
-     * See https://github.com/pypa/pip/issues/10444
-     */
-    WaitForSingleObject(child_process_info.hProcess, DELAY_FOR_CHILD_EXIT);
+    WaitForSingleObject(child_process_info.hProcess, INFINITE);
     return TRUE;
 }
 
@@ -500,8 +498,6 @@ clear_app_starting_state(PROCESS_INFORMATION* child_process_info) {
  * See https://github.com/pypa/pip/issues/10444#issuecomment-973396812
  */
 
-#define CLEANUP_LAUNCHER_HANDLES
-
 static void
 run_child(wchar_t * cmdline)
 {
@@ -533,16 +529,14 @@ run_child(wchar_t * cmdline)
 
         ok = safe_duplicate_handle(hIn, &si.hStdInput);
         assert(ok, "stdin duplication failed");
-#if defined(CLEANUP_LAUNCHER_HANDLES)
         CloseHandle(hIn);
-#endif
+
         ok = safe_duplicate_handle(hOut, &si.hStdOutput);
         assert(ok, "stdout duplication failed");
-#if defined(CLEANUP_LAUNCHER_HANDLES)
         CloseHandle(hOut);
         /* We might need stderr late, so don't close it but mark as non-inheritable */
         SetHandleInformation(hErr, HANDLE_FLAG_INHERIT, 0);
-#endif
+
         ok = safe_duplicate_handle(hErr, &si.hStdError);
         assert(ok, "stderr duplication failed");
         si.dwFlags |= STARTF_USESTDHANDLES;
