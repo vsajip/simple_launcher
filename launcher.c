@@ -434,10 +434,12 @@ safe_duplicate_handle(HANDLE in, HANDLE * pout)
 }
 
 /*
- * The process information structure is global so that it can be accessed
- * from the Ctrl-C handler.
+ * These items are global so that thet can be accessed
+ * from the Ctrl-C handler or other auxiliary routine.
  */
 static PROCESS_INFORMATION child_process_info;
+static JOBOBJECT_EXTENDED_LIMIT_INFORMATION job_info;
+static HANDLE job;
 
 static BOOL
 control_key_handler(DWORD type)
@@ -445,10 +447,30 @@ control_key_handler(DWORD type)
 /*
  * See https://github.com/pypa/pip/issues/10444
  */
+#if defined(OLD_LOGIC)
     if ((type == CTRL_C_EVENT) || (type == CTRL_BREAK_EVENT)) {
         return TRUE;
     }
     WaitForSingleObject(child_process_info.hProcess, INFINITE);
+#else
+    switch (type) {
+    case CTRL_CLOSE_EVENT:
+    case CTRL_LOGOFF_EVENT:
+    case CTRL_SHUTDOWN_EVENT:
+        /*
+         * Allow the child to outlive the launcher, to carry out any
+         * cleanup for a graceful exit. It will either exit or get
+         * terminated by the session server.
+         */
+        if (job != NULL) {
+            job_info.BasicLimitInformation.LimitFlags &=
+              ~JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            SetInformationJobObject(
+              job, JobObjectExtendedLimitInformation,
+              &job_info, sizeof(job_info));
+        }
+    }
+#endif
     return TRUE;
 }
 
@@ -468,14 +490,14 @@ control_key_handler(DWORD type)
  */
 
 static void
-clear_app_starting_state(PROCESS_INFORMATION* child_process_info) {
+clear_app_starting_state() {
     MSG msg;
     HWND hwnd;
 
     PostMessageW(0, 0, 0, 0);
     GetMessageW(&msg, 0, 0, 0);
     /* Proxy the child's input idle event. */
-    WaitForInputIdle(child_process_info->hProcess, INFINITE);
+    WaitForInputIdle(child_process_info.hProcess, INFINITE);
     /*
      * Signal the process input idle event by creating a window and pumping
      * sent messages. The window class isn't important, so just use the
@@ -501,8 +523,6 @@ clear_app_starting_state(PROCESS_INFORMATION* child_process_info) {
 static void
 run_child(wchar_t * cmdline)
 {
-    HANDLE job;
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION info;
     DWORD rc;
     BOOL ok;
     STARTUPINFOW si;
@@ -510,12 +530,12 @@ run_child(wchar_t * cmdline)
     job = CreateJobObject(NULL, NULL);
     assert(job != NULL, "Job creation failed");
     ok = QueryInformationJobObject(job, JobObjectExtendedLimitInformation,
-                                  &info, sizeof(info), &rc);
-    assert(ok && (rc == sizeof(info)), "Job information querying failed");
-    info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE |
-                                             JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
-    ok = SetInformationJobObject(job, JobObjectExtendedLimitInformation, &info,
-                                 sizeof(info));
+                                  &job_info, sizeof(job_info), &rc);
+    assert(ok && (rc == sizeof(job_info)), "Job information querying failed");
+    job_info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE |
+                                                 JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
+    ok = SetInformationJobObject(job, JobObjectExtendedLimitInformation, &job_info,
+                                 sizeof(job_info));
     assert(ok, "Job information setting failed");
     memset(&si, 0, sizeof(si));
     GetStartupInfoW(&si);
