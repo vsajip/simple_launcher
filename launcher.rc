@@ -4,7 +4,7 @@
 LANGUAGE 0, 0
 IDI_ICON      ICON     ".\\launcher.ico"
 
-#ifdef _M_AMD64
+#if defined(_M_AMD64) || defined(_M_ARM64)
   #define BITSIZE 64
 #else
   #define BITSIZE 32
@@ -13,6 +13,12 @@ IDI_ICON      ICON     ".\\launcher.ico"
   #define APPKIND t
 #else
   #define APPKIND w
+#endif
+
+#if defined(_M_ARM) || defined(_M_ARM64)
+  #define ARM_SUFFIX "-arm"
+#else
+  #define ARM_SUFFIX ""
 #endif
 
 #include "version.h"
@@ -43,9 +49,9 @@ BEGIN
             VALUE "CompanyName", "Simple Launcher User"
             VALUE "FileDescription", "Simple Launcher Executable"
             VALUE "FileVersion", VERSION_STR
-            VALUE "InternalName", STRINGIZE(APPKIND) STRINGIZE(BITSIZE) ".exe"
+            VALUE "InternalName", STRINGIZE(APPKIND) STRINGIZE(BITSIZE) ARM_SUFFIX ".exe"
             VALUE "LegalCopyright", "Copyright (C) Simple Launcher User"
-            VALUE "OriginalFilename", STRINGIZE(APPKIND) STRINGIZE(BITSIZE) ".exe"
+            VALUE "OriginalFilename", STRINGIZE(APPKIND) STRINGIZE(BITSIZE) ARM_SUFFIX ".exe"
             VALUE "ProductName", "Simple Launcher"
             VALUE "ProductVersion", VERSION_STR
         END
