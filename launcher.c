@@ -36,7 +36,6 @@
 #define APPENDED_ARCHIVE
 #define USE_ENVIRONMENT
 #define SUPPORT_RELATIVE_PATH
-#define LOGGING_ENABLED
 
 #define MSGSIZE 1024
 
@@ -166,23 +165,6 @@ assert(BOOL condition, char * format, ... )
         ExitProcess(1);
     }
 }
-
-#if defined(LOGGING_ENABLED)
-
-static void
-debug_log(wchar_t * format, ...) {
-    va_list va;
-    wchar_t message[MSGSIZE];
-    int len;
-
-    va_start(va, format);
-#if defined(_CONSOLE)
-    len = _vsnwprintf_s(message, MSGSIZE, MSGSIZE - 1, format, va);
-#endif
-    fprintf(stderr, "%S\n", message);
-}
-
-#endif
 
 static wchar_t script_path[MAX_PATH];
 
@@ -796,9 +778,6 @@ process(int argc, char * argv[])
 
 int main(int argc, char* argv[])
 {
-#if defined(LOGGING_ENABLED)
-    debug_log(L"Started.");
-#endif
     return process(argc, argv);
 }
 

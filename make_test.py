@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2018-2021 Vinay Sajip.
+# Copyright (C) 2018-2022 Vinay Sajip.
 #
 import argparse
 import io
