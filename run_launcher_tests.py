@@ -19,12 +19,12 @@ logger = logging.getLogger(__name__)
 
 def message(s):
     tod = datetime.datetime.now().strftime('%H:%M:%S')
-    print('%s %s' % (tod, s))
+    print('%s %s' % (tod, s), file=sys.stderr)
 
 def dump_process_tree(pp, descendants, level=1):
     descendants.append(pp)
     indent = level * '  '
-    print('%s%s %s' % (indent, pp.pid, pp.cmdline()))
+    print('%s%s %s' % (indent, pp.pid, pp.cmdline()), file=sys.stderr)
     for kid in pp.children():
         dump_process_tree(kid, descendants, level + 1)
 
@@ -34,14 +34,11 @@ def test_executable(options, cmd, descr):
     time.sleep(0.5)
     pp = psutil.Process(p.pid)
     message('Process tree:')
-    descendants = dump_process_tree(pp, [])
-    # message('Descendants for %s: %s' % (descr, [(pr.pid, pr.cmdline()) for pr in descendants]))
-    # assert len(descendants) == 1
-    # kid = descendants[0]
-    message('Launcher for %s: %s' % (descr, pp))
+    descendants = []
+    dump_process_tree(pp, descendants)
     message('Waiting %s secs ...' % options.delay)
     time.sleep(options.delay - 0.5)
-    message('Trying to stop %s ...' % descr)
+    message('Trying to stop %s with pid %s ...' % (descr, p.pid))
     p.kill()
     message('Waiting 500 msecs ...')
     time.sleep(0.5)
@@ -49,10 +46,16 @@ def test_executable(options, cmd, descr):
     if rc is None:
         message('The %s is still running' % descr)
         raise ValueError('Failed to stop %s' % descr)
-    try:
-        pass # kid.status()
-    except psutil.NoSuchProcess:
-        pass
+    alive = []
+    for descendant in descendants:
+        try:
+            s = descendant.status()
+            message('Descendant remaining: %s' % descendant)
+            alive.append(descendant)
+        except psutil.NoSuchProcess:
+            pass
+    if alive:
+        raise ValueError('There are still %d descendants alive' % len(alive))
     message('%s stopped with return code: %s' % (descr, rc))
 
 def main():

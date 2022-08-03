@@ -56,7 +56,7 @@ def main():
     adhf = argparse.ArgumentDefaultsHelpFormatter
     parser = argparse.ArgumentParser(formatter_class=adhf, prog=fn)
     parser.add_argument('-p', '--python', default=PYTHON_LOCATION,
-                        help='Use this in the shebang (must contain the text "python.exe"')
+                        help='Use this in the shebang - must contain the text "python.exe"')
     parser.add_argument('-o', '--outdir', default='test',
                         help='Write files here')
     parser.add_argument('-s', '--suffix', default='v',
@@ -74,6 +74,10 @@ def main():
         zf.writestr(zinfo, wscript_data)
     # hard to escape double quotes in command line, so replace
     # single quotes with double
+    if options.python == 'ENV_PYTHON':
+        d = os.environ['pythonLocation']
+        assert d
+        options.python = os.path.join(d, 'python.exe')
     options.shebang = options.python.replace('\'', '"')
     shebang = ('#!%s\n' % options.shebang).encode('utf-8')
     wshebang = ('#!%s\n' % options.shebang.replace('python.exe', 'pythonw.exe')).encode('utf-8')
