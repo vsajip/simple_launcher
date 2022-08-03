@@ -47,17 +47,20 @@ ctypes.windll.user32.MessageBoxW(0, s, 'System Info', MB_OK)
 # Use a fixed time to have a reproducible archive as far as possible
 ZIP_TIMESTAMP = datetime.date(2000, 1, 1).timetuple()[:6]
 
+LAUNCHER_LOCATION = r'env\Lib\site-packages\distlib'
+PYTHON_LOCATION = os.path.abspath(r'env\Scripts\python.exe').lower()
+
 def main():
     fn = os.path.basename(__file__)
     fn = os.path.splitext(fn)[0]
     adhf = argparse.ArgumentDefaultsHelpFormatter
     parser = argparse.ArgumentParser(formatter_class=adhf, prog=fn)
-    parser.add_argument('-s', '--shebang', default='c:/python38/python.exe -u',
-                        help='Use this in the shebang')
+    parser.add_argument('-p', '--python', default=PYTHON_LOCATION,
+                        help='Use this in the shebang - must contain the text "python.exe"')
     parser.add_argument('-o', '--outdir', default='test',
                         help='Write files here')
-    parser.add_argument('--release', default=False, action='store_true',
-                        help='Use release executables')
+    parser.add_argument('-s', '--suffix', default='v',
+                        help='Suffix for executables')
     options = parser.parse_args()
     script_data = MAIN.strip().encode('utf-8')
     wscript_data = MAINW.strip().encode('utf-8')
@@ -71,27 +74,31 @@ def main():
         zf.writestr(zinfo, wscript_data)
     # hard to escape double quotes in command line, so replace
     # single quotes with double
-    options.shebang = options.shebang.replace('\'', '"')
+    if options.python == 'ENV_PYTHON':
+        d = os.environ['pythonLocation']
+        assert d
+        options.python = os.path.join(d, 'python.exe')
+    options.shebang = options.python.replace('\'', '"')
     shebang = ('#!%s\n' % options.shebang).encode('utf-8')
     wshebang = ('#!%s\n' % options.shebang.replace('python.exe', 'pythonw.exe')).encode('utf-8')
-    fn = 'dist/t64.exe' if options.release else 'x64/Debug/CLISimpleLauncher.exe'
+    fn = os.path.join(LAUNCHER_LOCATION, 't64.exe')
     if os.path.exists(fn):
         with open(fn, 'rb') as f:
             launcher_data = f.read()
         data = launcher_data + shebang + archive_data.getvalue()
-        ofn = os.path.join(options.outdir, 'test.exe')
+        ofn = os.path.join(options.outdir, 'test%s.exe' % options.suffix)
         with open(ofn, 'wb') as f:
             f.write(data)
-        print('wrote %s using %s' % (ofn, fn))
-    fn = 'dist/w64.exe' if options.release else 'x64/Debug/GUISimpleLauncher.exe'
+        print('wrote %s using launcher %s and shebang %s' % (ofn, fn, shebang.rstrip().decode('utf-8')))
+    fn = os.path.join(LAUNCHER_LOCATION, 'w64.exe')
     if os.path.exists(fn):
         with open(fn, 'rb') as f:
             launcher_data = f.read()
         data = launcher_data + wshebang + warchive_data.getvalue()
-        ofn = os.path.join(options.outdir, 'testw.exe')
+        ofn = os.path.join(options.outdir, 'test%sw.exe' % options.suffix)
         with open(ofn, 'wb') as f:
             f.write(data)
-        print('wrote %s using %s' % (ofn, fn))
+        print('wrote %s using launcher %s and shebang %s' % (ofn, fn, wshebang.rstrip().decode('utf-8')))
 
 
 if __name__ == '__main__':
